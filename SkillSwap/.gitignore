@@ -1,0 +1,70 @@
+# ============================================================
+# NODE.JS — Dependencies (never commit, reinstall via npm i)
+# ============================================================
+node_modules/
+**/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnp
+.pnp.js
+
+# ============================================================
+# ENVIRONMENT VARIABLES — SECRET, NEVER PUSH TO GITHUB
+# ============================================================
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+**/.env
+
+# ============================================================
+# REACT / CLIENT — Build output (auto-generated)
+# ============================================================
+client/build/
+client/coverage/
+
+# ============================================================
+# TERRAFORM — State files contain real AWS resource info (SECRET)
+# ============================================================
+terraform/.terraform/
+terraform/terraform.tfstate
+terraform/terraform.tfstate.backup
+terraform/.terraform.lock.hcl
+**/.terraform/
+*.tfstate
+*.tfstate.backup
+
+# ============================================================
+# UPLOADS — User-generated files (too large for git)
+# ============================================================
+server/uploads/*
+!server/uploads/.gitkeep
+
+# ============================================================
+# macOS — System junk files
+# ============================================================
+.DS_Store
+.AppleDouble
+.LSOverride
+**/.DS_Store
+
+# ============================================================
+# WINDOWS — System junk files
+# ============================================================
+config.bat
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# ============================================================
+# DOCKER — Local override files
+# ============================================================
+docker-compose.override.yml
+
+# ============================================================
+# LOGS
+# ============================================================
+logs/
+*.log
