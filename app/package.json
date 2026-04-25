@@ -5,13 +5,15 @@
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
-    "test": "jest --coverage"
+    "test:unit": "JEST_JUNIT_OUTPUT_NAME=unit-report.xml jest tests/unit.test.js --reporters=default --reporters=jest-junit",
+    "test:integration": "JEST_JUNIT_OUTPUT_NAME=integration-report.xml jest tests/integration.test.js --reporters=default --reporters=jest-junit"
   },
   "dependencies": {
     "express": "^4.18.2"
   },
   "devDependencies": {
     "jest": "^29.5.0",
+    "jest-junit": "^16.0.0",
     "supertest": "^6.3.3"
   }
 }

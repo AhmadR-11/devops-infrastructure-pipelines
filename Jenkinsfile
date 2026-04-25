@@ -30,17 +30,47 @@ pipeline {
         }
 
         stage('Test') {
-            // We run the tests inside the same Node.js container
-            agent {
-                docker {
-                    image 'node:18-alpine'
-                    reuseNode true
+            failFast true
+            parallel {
+                stage('Unit Tests') {
+                    agent {
+                        docker {
+                            image 'node:18-alpine'
+                            reuseNode true
+                        }
+                    }
+                    steps {
+                        dir('app') {
+                            sh 'npm run test:unit'
+                        }
+                    }
+                    post {
+                        always {
+                            dir('app') {
+                                junit 'unit-report.xml'
+                            }
+                        }
+                    }
                 }
-            }
-            steps {
-                dir('app') {
-                    sh 'npm test'
-                    echo '✅ All 5 Unit Tests and 2 Integration Tests passed!'
+                stage('Integration Tests') {
+                    agent {
+                        docker {
+                            image 'node:18-alpine'
+                            reuseNode true
+                        }
+                    }
+                    steps {
+                        dir('app') {
+                            sh 'npm run test:integration'
+                        }
+                    }
+                    post {
+                        always {
+                            dir('app') {
+                                junit 'integration-report.xml'
+                            }
+                        }
+                    }
                 }
             }
         }
