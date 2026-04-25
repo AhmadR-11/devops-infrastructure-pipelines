@@ -4,6 +4,11 @@ pipeline {
         label 'linux-agent'
     }
 
+    environment {
+        // Securely injects the Slack Webhook without exposing the plaintext URL
+        SLACK_WEBHOOK_URL = credentials('slack-webhook')
+    }
+
     stages {
         stage('Checkout') {
             steps {
@@ -95,6 +100,22 @@ pipeline {
                 sh 'docker run -d -p 3000:3000 --name sample-app sample-express-app:latest'
                 echo '✅ Application successfully deployed and running on port 3000.'
             }
+        }
+    }
+
+    post {
+        success {
+            echo '✅ Pipeline Succeeded! Sending notification...'
+            // We use curl here to safely send a Slack message using the hidden webhook variable
+            sh '''
+                curl -X POST -H "Content-type: application/json" --data "{\\"text\\":\\"✅ SUCCESS: Jenkins Pipeline ${JOB_NAME} Build #${BUILD_NUMBER} has passed perfectly!\\"}" ${SLACK_WEBHOOK_URL}
+            '''
+        }
+        failure {
+            echo '❌ Pipeline Failed! Sending notification...'
+            sh '''
+                curl -X POST -H "Content-type: application/json" --data "{\\"text\\":\\"❌ FAILURE: Jenkins Pipeline ${JOB_NAME} Build #${BUILD_NUMBER} has failed. Please check the logs.\\"}" ${SLACK_WEBHOOK_URL}
+            '''
         }
     }
 }
