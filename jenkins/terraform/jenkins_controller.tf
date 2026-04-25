@@ -19,7 +19,7 @@ resource "aws_security_group" "jenkins_controller_sg" {
     from_port   = 8080
     to_port     = 8080
     protocol    = "tcp"
-    cidr_blocks = ["59.103.246.18/32"] 
+    cidr_blocks = ["0.0.0.0/0"] # Changed to allow GitHub to send the webhook
   }
 
   # Allow all outbound traffic
