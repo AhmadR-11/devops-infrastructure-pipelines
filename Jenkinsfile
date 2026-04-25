@@ -104,17 +104,23 @@ pipeline {
     }
 
     post {
+        always {
+            echo '📦 Archiving build artifacts...'
+            // Archives the package.json and test XML reports so they can be downloaded from the Jenkins UI
+            archiveArtifacts artifacts: 'app/package.json, **/*.xml', allowEmptyArchive: true
+        }
         success {
             echo '✅ Pipeline Succeeded! Sending notification...'
-            // We use curl here to safely send a Slack message using the hidden webhook variable
+            // Includes the BUILD_URL so you can click directly to the success page from Slack
             sh '''
-                curl -X POST -H "Content-type: application/json" --data "{\\"text\\":\\"✅ SUCCESS: Jenkins Pipeline ${JOB_NAME} Build #${BUILD_NUMBER} has passed perfectly!\\"}" ${SLACK_WEBHOOK_URL}
+                curl -X POST -H "Content-type: application/json" --data "{\\"text\\":\\"✅ SUCCESS: Jenkins Pipeline ${JOB_NAME} Build #${BUILD_NUMBER} passed! View it here: ${BUILD_URL}\\"}" ${SLACK_WEBHOOK_URL}
             '''
         }
         failure {
             echo '❌ Pipeline Failed! Sending notification...'
+            // Includes the BUILD_URL so you can click directly to the failing stage from Slack
             sh '''
-                curl -X POST -H "Content-type: application/json" --data "{\\"text\\":\\"❌ FAILURE: Jenkins Pipeline ${JOB_NAME} Build #${BUILD_NUMBER} has failed. Please check the logs.\\"}" ${SLACK_WEBHOOK_URL}
+                curl -X POST -H "Content-type: application/json" --data "{\\"text\\":\\"❌ FAILURE: A stage failed in Jenkins Pipeline ${JOB_NAME} Build #${BUILD_NUMBER}. Check logs here: ${BUILD_URL}\\"}" ${SLACK_WEBHOOK_URL}
             '''
         }
     }
