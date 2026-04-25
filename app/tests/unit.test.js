@@ -3,7 +3,7 @@ const { add, subtract, multiply, divide, isEven } = require('../src/math');
 describe('Math Utility Unit Tests', () => {
   // Unit Test 1
   test('adds 1 + 2 to equal 3', () => {
-    expect(add(1, 2)).toBe(3);
+    expect(add(1, 2)).toBe(999);
   });
 
   // Unit Test 2
