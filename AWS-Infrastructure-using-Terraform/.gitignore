@@ -1,0 +1,46 @@
+# ============================================================
+# TERRAFORM — Working directory (provider binaries, cache)
+# ============================================================
+.terraform/
+
+# ============================================================
+# TERRAFORM — State files (contain real AWS resource IDs & secrets)
+# ============================================================
+*.tfstate
+*.tfstate.*
+
+# ============================================================
+# TERRAFORM — Variable files (may contain your IP, key names, secrets)
+# ============================================================
+*.tfvars
+*.tfvars.json
+
+# ============================================================
+# TERRAFORM — CLI overrides & generated files
+# ============================================================
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+crash.log
+*.tfplan
+
+# ============================================================
+# TERRAFORM — SSH / Local key material (NEVER push private keys)
+# ============================================================
+*.pem
+*.key
+
+# ============================================================
+# macOS — System junk files (NEVER push these)
+# ============================================================
+.DS_Store
+.AppleDouble
+.LSOverride
+**/.DS_Store
+
+# ============================================================
+# PACKER — Build artifacts
+# ============================================================
+packer_cache/
+*.box
