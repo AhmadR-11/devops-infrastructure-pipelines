@@ -1,17 +1,35 @@
-FROM node:18-alpine
+# ---- Stage 1: Builder ----
+FROM node:18-alpine AS builder
 
-# Set the working directory
 WORKDIR /usr/src/app
 
-# Copy package.json and install dependencies
+# Copy package files
 COPY package*.json ./
-RUN npm install --production
 
-# Copy the rest of the application code
-COPY . .
+# Install ONLY production dependencies to ensure no development tools/compilers are included
+RUN npm install --omit=dev
 
-# Expose the API port
+# Copy the actual application source code
+COPY src/ ./src/
+
+# ---- Stage 2: Minimal Runtime ----
+FROM node:18-alpine
+
+WORKDIR /usr/src/app
+
+# Copy only the pre-installed production dependencies and source code from the builder stage
+COPY --from=builder /usr/src/app/package*.json ./
+COPY --from=builder /usr/src/app/node_modules ./node_modules
+COPY --from=builder /usr/src/app/src ./src
+
+# Change ownership of the files to the built-in non-root 'node' user
+RUN chown -R node:node /usr/src/app
+
+# Enforce running the container as a non-root user for security compliance
+USER node
+
+# Expose the application port
 EXPOSE 3000
 
-# Start the application
+# Start the Node.js server
 CMD ["node", "src/server.js"]
