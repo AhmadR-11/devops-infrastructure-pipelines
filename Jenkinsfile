@@ -1,3 +1,5 @@
+@Library('jenkins-shared-library') _
+
 pipeline {
     // This enforces that the pipeline runs ONLY on your new private subnet agent!
     agent {
@@ -111,17 +113,13 @@ pipeline {
         }
         success {
             echo '✅ Pipeline Succeeded! Sending notification...'
-            // Includes the BUILD_URL so you can click directly to the success page from Slack
-            sh '''
-                curl -X POST -H "Content-type: application/json" --data "{\\"text\\":\\"✅ SUCCESS: Jenkins Pipeline ${JOB_NAME} Build #${BUILD_NUMBER} passed! View it here: ${BUILD_URL}\\"}" ${SLACK_WEBHOOK_URL}
-            '''
+            // We replaced the ugly curl command with our beautiful new Shared Library step!
+            notifySlack(message: "✅ SUCCESS: Jenkins Pipeline ${env.JOB_NAME} Build #${env.BUILD_NUMBER} passed! View it here: ${env.BUILD_URL}")
         }
         failure {
             echo '❌ Pipeline Failed! Sending notification...'
-            // Includes the BUILD_URL so you can click directly to the failing stage from Slack
-            sh '''
-                curl -X POST -H "Content-type: application/json" --data "{\\"text\\":\\"❌ FAILURE: A stage failed in Jenkins Pipeline ${JOB_NAME} Build #${BUILD_NUMBER}. Check logs here: ${BUILD_URL}\\"}" ${SLACK_WEBHOOK_URL}
-            '''
+            // We replaced the ugly curl command with our beautiful new Shared Library step!
+            notifySlack(message: "❌ FAILURE: A stage failed in Jenkins Pipeline ${env.JOB_NAME} Build #${env.BUILD_NUMBER}. Check logs here: ${env.BUILD_URL}")
         }
     }
 }
