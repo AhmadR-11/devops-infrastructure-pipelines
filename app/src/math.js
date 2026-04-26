@@ -20,4 +20,19 @@ function isEven(num) {
   return num % 2 === 0;
 }
 
-module.exports = { add, subtract, multiply, divide, isEven };
+// ---------------------------------------------------------
+// INTENTIONALLY UNTESTED CODE TO FAIL THE QUALITY GATE
+// ---------------------------------------------------------
+function untestedComplexLogic(a) {
+  if (a > 10) {
+    console.log("This is uncovered line 1");
+  } else {
+    console.log("This is uncovered line 2");
+  }
+  for (let i = 0; i < 5; i++) {
+    console.log("Uncovered loop " + i);
+  }
+  return false;
+}
+
+module.exports = { add, subtract, multiply, divide, isEven, untestedComplexLogic };
