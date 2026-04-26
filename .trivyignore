@@ -1,0 +1,12 @@
+# -------------------------------------------------------------
+# TRIVY IGNORE FILE
+# -------------------------------------------------------------
+# Use this file to document and explicitly ignore any CVEs that
+# are deemed acceptable or false positives.
+#
+# Format: Add the CVE ID on a new line.
+# Requirement: MUST include a justification comment above each CVE!
+#
+# Example:
+# # Ignore this CVE because it requires local access which we mitigate
+# CVE-2023-12345

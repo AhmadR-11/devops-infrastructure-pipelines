@@ -32,6 +32,7 @@ resource "aws_instance" "jenkins_agent" {
   key_name      = var.key_name
 
   vpc_security_group_ids = [aws_security_group.jenkins_agent_sg.id]
+  iam_instance_profile   = aws_iam_instance_profile.jenkins_agent_profile.name
 
   # Increase default disk space from 8GB to 15GB so the 2GB Swap file doesn't trigger Jenkins's low disk space safety lock!
   root_block_device {
@@ -50,9 +51,9 @@ resource "aws_instance" "jenkins_agent" {
     swapon /swapfile
     echo '/swapfile none swap sw 0 0' >> /etc/fstab
 
-    # 2. Install dependencies
+    # 2. Install dependencies (Java, Git, Docker, and AWS CLI for ECR authentication)
     sudo apt-get update -y
-    sudo apt-get install -y openjdk-21-jre git docker.io
+    sudo apt-get install -y openjdk-21-jre git docker.io awscli
     sudo systemctl enable docker
     sudo systemctl start docker
     
