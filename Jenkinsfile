@@ -102,12 +102,18 @@ pipeline {
             }
         }
 
-        stage('Package') {
+        stage('Container Build') {
             steps {
+                script {
+                    // Generate a 7-character short Git commit SHA
+                    env.SHORT_SHA = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
+                    // Extract the branch name (removes the "origin/" prefix provided by Jenkins)
+                    env.CLEAN_BRANCH = env.GIT_BRANCH ? env.GIT_BRANCH.split('/').last() : 'main'
+                }
                 dir('app') {
-                    // Uses the Dockerfile to package the entire app into a Docker Image
-                    sh 'docker build -t sample-express-app:latest .'
-                    echo '✅ Application packaged into a Docker container.'
+                    // Build and tag the image twice: once with the SHA, once with the branch name
+                    sh 'docker build -t sample-express-app:$SHORT_SHA -t sample-express-app:$CLEAN_BRANCH .'
+                    echo "✅ Image tagged as sample-express-app:${env.SHORT_SHA} and sample-express-app:${env.CLEAN_BRANCH}"
                 }
             }
         }
@@ -118,8 +124,8 @@ pipeline {
                 // This cleans up any old versions before deploying the new one
                 sh 'docker stop sample-app || true'
                 sh 'docker rm sample-app || true'
-                // This officially runs the app on your private agent server!
-                sh 'docker run -d -p 3000:3000 --name sample-app sample-express-app:latest'
+                // This officially runs the app using our newly generated Short SHA tag!
+                sh 'docker run -d -p 3000:3000 --name sample-app sample-express-app:$SHORT_SHA'
                 echo '✅ Application successfully deployed and running on port 3000.'
             }
         }
