@@ -33,14 +33,30 @@ resource "aws_instance" "jenkins_agent" {
 
   vpc_security_group_ids = [aws_security_group.jenkins_agent_sg.id]
 
+  # Increase default disk space from 8GB to 15GB so the 2GB Swap file doesn't trigger Jenkins's low disk space safety lock!
+  root_block_device {
+    volume_size = 15
+    volume_type = "gp3"
+  }
+
   # Install Java 21, Git, and Docker (needed for agent to run pipeline steps)
   user_data = <<-EOF
     #!/bin/bash
+    
+    # 1. Create a 2GB Swap file to prevent Out-Of-Memory crashes during SonarQube scans
+    fallocate -l 2G /swapfile
+    chmod 600 /swapfile
+    mkswap /swapfile
+    swapon /swapfile
+    echo '/swapfile none swap sw 0 0' >> /etc/fstab
+
+    # 2. Install dependencies
     sudo apt-get update -y
     sudo apt-get install -y openjdk-21-jre git docker.io
     sudo systemctl enable docker
     sudo systemctl start docker
-    # Add ubuntu user to the docker group so pipelines can run containers
+    
+    # 3. Add ubuntu user to the docker group so pipelines can run containers
     sudo usermod -aG docker ubuntu
   EOF
 

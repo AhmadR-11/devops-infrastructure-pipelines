@@ -82,6 +82,26 @@ pipeline {
             }
         }
 
+        stage('Static Analysis & Quality Gate') {
+            agent {
+                docker {
+                    image 'node:18' // Must use standard Node (not alpine) because SonarQube requires Java glibc
+                    reuseNode true
+                }
+            }
+            steps {
+                dir('app') {
+                    echo '🔍 Running SonarQube Code Quality Analysis...'
+                    runSonarScan(projectKey: 'sample-express-app')
+                }
+                
+                // This forces Jenkins to wait for SonarQube to calculate the score!
+                timeout(time: 10, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
+                }
+            }
+        }
+
         stage('Package') {
             steps {
                 dir('app') {
