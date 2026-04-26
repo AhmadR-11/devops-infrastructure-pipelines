@@ -121,10 +121,23 @@ pipeline {
         stage('Security Scan') {
             steps {
                 echo '🔍 Running Trivy Vulnerability Scan...'
-                // Mount the docker socket to scan local images, and mount the .trivyignore file
-                // --exit-code 1 forces the pipeline to fail if vulnerabilities are found
+                
+                // 1. Run the scan to generate a report file (we mount /workspace to save the file)
+                sh "docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v ${env.WORKSPACE}/.trivyignore:/.trivyignore -v ${env.WORKSPACE}:/workspace aquasec/trivy image --format table --output /workspace/trivy-report.txt --severity HIGH,CRITICAL --ignore-unfixed sample-express-app:${env.SHORT_SHA}"
+                
+                // 2. Display the report in the console so you can see it
+                sh "cat trivy-report.txt"
+                
+                // 3. Run the scan with exit-code 1 and the ignorefile to actually enforce the Quality Gate
                 sh "docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v ${env.WORKSPACE}/.trivyignore:/.trivyignore aquasec/trivy image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed --ignorefile /.trivyignore sample-express-app:${env.SHORT_SHA}"
-                echo '✅ Trivy Security Scan passed! No severe vulnerabilities found.'
+                
+                echo '✅ Trivy Security Scan passed! No severe vulnerabilities found (or they were successfully ignored).'
+            }
+            post {
+                always {
+                    // Archive the Trivy report as a Jenkins artifact regardless of scan result
+                    archiveArtifacts artifacts: 'trivy-report.txt', allowEmptyArchive: true
+                }
             }
         }
 
