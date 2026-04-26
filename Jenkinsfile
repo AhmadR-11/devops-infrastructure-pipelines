@@ -36,6 +36,22 @@ pipeline {
             }
         }
 
+        stage('Static Analysis') {
+            agent {
+                docker {
+                    image 'node:18' // Must use standard Node (not alpine) because SonarQube requires Java glibc
+                    reuseNode true
+                }
+            }
+            steps {
+                dir('app') {
+                    echo '🔍 Running SonarQube Code Quality Analysis...'
+                    // We use the Shared Library step we created in Task 3!
+                    runSonarScan(projectKey: 'sample-express-app')
+                }
+            }
+        }
+
         stage('Test') {
             failFast true
             parallel {
