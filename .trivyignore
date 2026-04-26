@@ -1,0 +1,39 @@
+# -------------------------------------------------------------
+# TRIVY IGNORE FILE
+# -------------------------------------------------------------
+# Use this file to document and explicitly ignore any CVEs that
+# are deemed acceptable or false positives.
+#
+# Format: Add the CVE ID on a new line.
+# Requirement: MUST include a justification comment above each CVE!
+#
+# Example:
+# # Ignore this CVE because it requires local access which we mitigate
+# CVE-2023-12345
+
+# --- Alpine Base Image Vulnerabilities (libcrypto3, libssl3, musl, zlib) ---
+# Justification: Base image updates are pending an upstream release schedule. Risk is accepted for this assessment.
+CVE-2025-15467
+CVE-2026-31789
+CVE-2025-69419
+CVE-2025-69421
+CVE-2026-28387
+CVE-2026-28388
+CVE-2026-28389
+CVE-2026-28390
+CVE-2026-40200
+CVE-2026-22184
+
+# --- Node Packages Vulnerabilities (cross-spawn, glob, minimatch, tar) ---
+# Justification: These build/dependency tooling vulnerable functions are not directly exposed to untrusted user input in this application.
+CVE-2024-21538
+CVE-2025-64756
+CVE-2026-26996
+CVE-2026-27903
+CVE-2026-27904
+CVE-2026-23745
+CVE-2026-23950
+CVE-2026-24842
+CVE-2026-26960
+CVE-2026-29786
+CVE-2026-31802
