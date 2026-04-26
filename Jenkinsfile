@@ -135,6 +135,8 @@ pipeline {
                     env.ECR_URL = "867490540447.dkr.ecr.us-east-1.amazonaws.com"
                 }
                 echo '🔐 Authenticating to AWS ECR...'
+                // Install AWS CLI if it is not already installed on the agent
+                sh "if ! command -v aws &> /dev/null; then sudo apt-get update && sudo apt-get install -y awscli; fi"
                 // This uses the IAM Instance Profile attached to the EC2 server (NO hardcoded passwords!)
                 sh "aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${env.ECR_URL}"
                 
