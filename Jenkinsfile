@@ -123,7 +123,7 @@ pipeline {
                 echo '🔍 Running Trivy Vulnerability Scan...'
                 // Mount the docker socket to scan local images, and mount the .trivyignore file
                 // --exit-code 1 forces the pipeline to fail if vulnerabilities are found
-                sh "docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v ${env.WORKSPACE}/.trivyignore:/.trivyignore aquasec/trivy image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed --trivyignore /.trivyignore sample-express-app:${env.SHORT_SHA}"
+                sh "docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v ${env.WORKSPACE}/.trivyignore:/.trivyignore aquasec/trivy image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed --ignorefile /.trivyignore sample-express-app:${env.SHORT_SHA}"
                 echo '✅ Trivy Security Scan passed! No severe vulnerabilities found.'
             }
         }
