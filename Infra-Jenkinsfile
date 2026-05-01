@@ -6,11 +6,11 @@
 //   1. Checkout
 //   2. Install Tools  (Terraform + tfsec)
 //   3. Fmt & Validate (terraform fmt -check + terraform validate)
-//   4. Security Scan  (tfsec → fails on HIGH, archives report)
-//   5. Terraform Init
-//   6. Terraform Plan
-//   7. Manual Approval (skipped if ACTION=plan or AUTO_APPROVE=true)
-//   8. Apply / Destroy (based on ACTION parameter)
+//   4. Security Scan  (tfsec → fails on HIGH, archives JSON report)
+//   5. Terraform Init (with S3 backend + DynamoDB state locking)
+//   6. Terraform Plan (saved as binary tfplan, archived as artifact)
+//   7. Manual Approval (30-min timeout, only for apply/destroy)
+//   8. Apply / Destroy (fed exactly the archived tfplan binary)
 //
 // Parameters:
 //   ACTION       - choice: plan / apply / destroy
@@ -30,15 +30,13 @@ pipeline {
         booleanParam(
             name: 'AUTO_APPROVE',
             defaultValue: false,
-            description: 'Skip manual approval and run apply/destroy immediately.'
+            description: 'Skip the 30-minute manual approval gate for apply/destroy.'
         )
     }
 
     // ── Environment ───────────────────────────────────────────
     environment {
-        // Path to the Assignment 3 Terraform root module inside the repo
-        TF_DIR            = 'AWS-Infrastructure-using-Terraform/Task-6-Modules'
-        // AWS region (must match your Terraform provider)
+        TF_DIR             = 'AWS-Infrastructure-using-Terraform/Task-6-Modules'
         AWS_DEFAULT_REGION = 'us-east-1'
     }
 
@@ -56,7 +54,6 @@ pipeline {
         }
 
         // ── Stage 2: Install Tools ────────────────────────────
-        // Install Terraform and tfsec if they are not already present
         stage('Install Tools') {
             steps {
                 sh '''
@@ -83,26 +80,29 @@ pipeline {
                         chmod +x /tmp/tfsec
                         sudo mv /tmp/tfsec /usr/local/bin/tfsec
                     fi
-                    echo "✅ tfsec: $(tfsec --version)"
+                    echo "✅ tfsec: $(tfsec --version 2>&1 | tail -1)"
+
+                    # ── Install AWS CLI ────────────────────────
+                    if ! command -v aws > /dev/null 2>&1; then
+                        echo ">>> AWS CLI not found. Installing..."
+                        sudo apt-get install -y awscli
+                    fi
+                    echo "✅ AWS CLI: $(aws --version)"
                 '''
             }
         }
 
         // ── Stage 3: Fmt & Validate ───────────────────────────
-        // terraform fmt -check  → fails if code is not properly formatted
-        // terraform validate    → fails if there are syntax or config errors
         stage('Fmt & Validate') {
             steps {
                 dir(env.TF_DIR) {
                     echo '🎨 Checking Terraform formatting...'
-                    // -check flag makes fmt exit with code 1 if files need reformatting
-                    // -recursive checks all subdirectories (modules too)
+                    // -check exits with code 1 if any file needs reformatting
                     sh 'terraform fmt -check -recursive'
                     echo '✅ Formatting looks good!'
 
                     echo '🔍 Validating Terraform configuration...'
-                    // validate checks for syntax errors and internal consistency
-                    // It does NOT require AWS credentials - purely local check
+                    // -backend=false skips S3 connection for a local syntax check
                     sh 'terraform init -backend=false -input=false'
                     sh 'terraform validate'
                     echo '✅ Validation passed!'
@@ -111,60 +111,68 @@ pipeline {
         }
 
         // ── Stage 4: Security Scan (tfsec) ────────────────────
-        // Scans .tf files for security misconfigurations BEFORE deploying
-        // Fails the build on any HIGH severity finding
-        // Saves the full report as a Jenkins artifact
         stage('Security Scan (tfsec)') {
             steps {
                 dir(env.TF_DIR) {
                     echo '🔐 Running tfsec security scan...'
-                    // --format json saves a machine-readable report
-                    // --out saves the report to a file
-                    // We run in two passes:
-                    //   Pass 1: generate the JSON report (no exit-code enforcement)
-                    //   Pass 2: enforce the HIGH severity gate
+                    // Pass 1: generate the JSON report file (no gate enforcement)
                     sh 'tfsec . --format json --out ../../tfsec-report.json || true'
+                    // Pass 2: enforce the HIGH severity gate (fails build if any HIGH found)
                     sh 'tfsec . --format lovely --minimum-severity HIGH'
-                    echo '✅ tfsec security scan passed! No HIGH findings.'
+                    echo '✅ tfsec security scan passed!'
                 }
             }
             post {
                 always {
-                    // Archive the tfsec report regardless of pass/fail
+                    // Archive the tfsec report regardless of pass/fail result
                     archiveArtifacts artifacts: 'tfsec-report.json', allowEmptyArchive: true
-                    echo '📦 tfsec report archived as Jenkins artifact.'
+                    echo '📦 tfsec-report.json archived as Jenkins artifact.'
                 }
             }
         }
 
         // ── Stage 5: Terraform Init ───────────────────────────
+        // Connects to S3 backend and initializes DynamoDB state locking
         stage('Terraform Init') {
             steps {
                 dir(env.TF_DIR) {
-                    echo '🔧 Initializing Terraform with remote providers...'
+                    echo '🔧 Initializing Terraform with S3 backend...'
+                    echo '   Backend: s3://skillswap-867490540447-us-east-1-3737/task6-modules/'
+                    echo '   Lock:    DynamoDB table skillswap-tf-lock-3737'
                     sh 'terraform init -input=false'
-                    echo '✅ Terraform initialized successfully.'
+                    echo '✅ Terraform initialized. State is stored in S3 with DynamoDB locking.'
                 }
             }
         }
 
         // ── Stage 6: Terraform Plan ───────────────────────────
-        // Always runs — shows exactly what will change in AWS
+        // Saves the plan as a binary file and archives it as a Jenkins artifact.
+        // This guarantees the Apply stage runs EXACTLY what was reviewed.
         stage('Terraform Plan') {
             steps {
                 dir(env.TF_DIR) {
                     echo '📋 Running Terraform Plan...'
+                    // -out=tfplan saves a binary plan file
                     sh 'terraform plan -input=false -out=tfplan'
-                    echo '✅ Terraform Plan complete. Review the output above.'
+                    // Copy the plan file to workspace root for archiving
+                    sh 'cp tfplan ../../tfplan'
+                    echo '✅ Terraform Plan complete. Plan saved as binary artifact.'
+                }
+            }
+            post {
+                always {
+                    // Archive the binary plan file so reviewers can inspect it
+                    archiveArtifacts artifacts: 'tfplan', allowEmptyArchive: true
+                    echo '📦 tfplan archived as Jenkins artifact.'
                 }
             }
         }
 
-        // ── Stage 7: Manual Approval Gate ─────────────────────
-        // Shows a "Proceed?" button in Jenkins UI
-        // Skipped automatically if:
-        //   - ACTION = plan   (nothing to approve)
-        //   - AUTO_APPROVE = true (automation mode)
+        // ── Stage 7: Manual Approval ──────────────────────────
+        // Shows a "Proceed?" button in the Jenkins UI with a 30-minute timeout.
+        // If nobody clicks within 30 minutes, the build is automatically aborted.
+        // Skipped if ACTION=plan (nothing destructive to approve)
+        // Skipped if AUTO_APPROVE=true (automation / CI mode)
         stage('Manual Approval') {
             when {
                 allOf {
@@ -175,23 +183,41 @@ pipeline {
             steps {
                 script {
                     def actionMsg = params.ACTION.toUpperCase()
-                    input(
-                        message: "⚠️  You are about to run terraform ${actionMsg} against real AWS infrastructure. Proceed?",
-                        ok: "Yes, run ${actionMsg}!"
-                    )
-                    echo "✅ Manual approval granted for ${actionMsg}."
+                    // timeout(time: 30, unit: 'MINUTES') aborts the build
+                    // if no human approves within 30 minutes
+                    timeout(time: 30, unit: 'MINUTES') {
+                        input(
+                            message: """
+⚠️  APPROVAL REQUIRED ⚠️
+
+You are about to run: terraform ${actionMsg}
+This will make REAL changes to AWS infrastructure.
+
+Action    : ${actionMsg}
+Workspace : ${env.WORKSPACE}
+Build #   : ${env.BUILD_NUMBER}
+
+Review the Terraform Plan artifact above before proceeding!
+""",
+                            ok: "✅ Yes, run ${actionMsg}!"
+                        )
+                    }
+                    echo "✅ Manual approval granted. Proceeding with ${actionMsg}."
                 }
             }
         }
 
         // ── Stage 8a: Terraform Apply ─────────────────────────
+        // Uses the EXACT binary plan file from Stage 6.
+        // This is critical — it guarantees no surprises between plan and apply.
         stage('Terraform Apply') {
             when {
                 expression { params.ACTION == 'apply' }
             }
             steps {
                 dir(env.TF_DIR) {
-                    echo '🚀 Applying Terraform plan to AWS...'
+                    echo '🚀 Applying the approved Terraform plan to AWS...'
+                    // Feed exactly the binary plan that was archived and approved
                     sh 'terraform apply -input=false tfplan'
                     echo '✅ Terraform Apply complete. Infrastructure is up!'
                 }
@@ -205,7 +231,7 @@ pipeline {
             }
             steps {
                 dir(env.TF_DIR) {
-                    echo '💣 Destroying Terraform-managed infrastructure in AWS...'
+                    echo '💣 Destroying Terraform-managed infrastructure...'
                     sh 'terraform destroy -input=false -auto-approve'
                     echo '✅ Terraform Destroy complete. All resources removed.'
                 }
@@ -220,6 +246,7 @@ pipeline {
             echo "Pipeline finished."
             echo "  ACTION       : ${params.ACTION}"
             echo "  AUTO_APPROVE : ${params.AUTO_APPROVE}"
+            echo "  Build #      : ${env.BUILD_NUMBER}"
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         }
         success {
