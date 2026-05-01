@@ -13,10 +13,13 @@
 
 terraform {
   backend "s3" {
-    bucket         = "skillswap-867490540447-us-east-1-3737"
-    key            = "task6-modules/terraform.tfstate"
-    region         = "us-east-1"
-    dynamodb_table = "skillswap-tf-lock-3737"
-    encrypt        = true
+    bucket     = "skillswap-867490540447-us-east-1-3737"
+    key        = "task6-modules/terraform.tfstate"
+    region     = "us-east-1"
+    encrypt    = true
+    # use_lockfile enables native S3 state locking (Terraform v1.10+)
+    # This replaces the deprecated dynamodb_table parameter
+    use_lockfile = true
   }
 }
+
