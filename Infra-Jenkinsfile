@@ -139,7 +139,7 @@ pipeline {
                     echo '🔧 Initializing Terraform with S3 backend...'
                     echo '   Backend: s3://skillswap-867490540447-us-east-1-3737/task6-modules/'
                     echo '   Lock:    DynamoDB table skillswap-tf-lock-3737'
-                    sh 'terraform init -input=false'
+                    sh 'terraform init -input=false -reconfigure'
                     echo '✅ Terraform initialized. State is stored in S3 with DynamoDB locking.'
                 }
             }
