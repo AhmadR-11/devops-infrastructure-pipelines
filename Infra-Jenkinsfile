@@ -1,141 +1,133 @@
-// ============================================================
-// Infra-Jenkinsfile - Task 6
-// Purpose: Manages AWS infrastructure using Terraform.
+// =============================================================
+// infra-pipeline: Parameterized Terraform CI/CD Pipeline
+// Task 6 - DevOps Assignment 4
+//
 // Parameters:
-//   - ACTION: plan / apply / destroy
-//   - AUTO_APPROVE: Boolean. If true, skips manual approval gate.
-// ============================================================
+//   ACTION      - choice: plan / apply / destroy
+//   AUTO_APPROVE - boolean (default: false)
+//     If false → plan is always shown first; apply/destroy requires
+//     a manual approval step in Jenkins.
+//     If true  → apply/destroy runs immediately without approval.
+// =============================================================
 
 pipeline {
-
-    // Run this pipeline on the Jenkins agent (which has Terraform + AWS CLI installed)
     agent { label 'linux-agent' }
 
-    // ── PARAMETERIZATION ──────────────────────────────────────
-    // This is what creates the input form when you click "Build With Parameters"
+    // ── Parameters ────────────────────────────────────────────
     parameters {
-        // Dropdown choice for what Terraform action to run
         choice(
             name: 'ACTION',
             choices: ['plan', 'apply', 'destroy'],
-            description: '🔧 Select the Terraform action to execute.'
+            description: 'Select the Terraform action to run.'
         )
-
-        // Boolean checkbox - if checked, skips the manual approval step
         booleanParam(
             name: 'AUTO_APPROVE',
             defaultValue: false,
-            description: '⚠️ If checked, the apply/destroy will run WITHOUT a manual approval prompt.'
+            description: 'Skip manual approval and run apply/destroy immediately.'
         )
     }
 
-    // ── ENVIRONMENT VARIABLES ────────────────────────────────
+    // ── Environment ───────────────────────────────────────────
     environment {
-        // Path to the Terraform directory from Assignment 3 (inside this repo)
-        TF_DIR = 'jenkins/terraform'
-        AWS_REGION = 'us-east-1'
+        // Path to the Assignment 3 Terraform root module inside the repo
+        TF_DIR = 'AWS-Infrastructure-using-Terraform/Task-6-Modules'
+        // AWS region (must match your Terraform provider)
+        AWS_DEFAULT_REGION = 'us-east-1'
     }
 
-    // ── PIPELINE STAGES ──────────────────────────────────────
+    // ── Stages ────────────────────────────────────────────────
     stages {
 
-        // ── STAGE 1: Checkout ─────────────────────────────────
+        // 1. Checkout ─────────────────────────────────────────
         stage('Checkout') {
             steps {
                 checkout scm
-                echo "✅ Repository checked out on branch: ${env.BRANCH_NAME}"
+                echo "✅ Repository checked out. Running ACTION=${params.ACTION} with AUTO_APPROVE=${params.AUTO_APPROVE}"
             }
         }
 
-        // ── STAGE 2: Terraform Init ───────────────────────────
-        // Always run init first to download providers and modules
+        // 2. Terraform Init ───────────────────────────────────
         stage('Terraform Init') {
             steps {
-                dir("${TF_DIR}") {
-                    echo '⚙️  Initializing Terraform...'
+                dir(env.TF_DIR) {
+                    echo '🔧 Initializing Terraform...'
                     sh 'terraform init -input=false'
                     echo '✅ Terraform initialized successfully.'
                 }
             }
         }
 
-        // ── STAGE 3: Terraform Plan ───────────────────────────
-        // Always run plan to generate the execution plan file
+        // 3. Terraform Plan ───────────────────────────────────
+        // Always runs so you can see what will change
         stage('Terraform Plan') {
             steps {
-                dir("${TF_DIR}") {
-                    echo '📋 Generating Terraform execution plan...'
-                    // -out saves the plan so that apply uses exactly what was reviewed
+                dir(env.TF_DIR) {
+                    echo '📋 Running Terraform Plan...'
                     sh 'terraform plan -input=false -out=tfplan'
-                    echo '✅ Terraform plan generated. See output above.'
+                    echo '✅ Terraform Plan complete. Review the output above.'
                 }
             }
         }
 
-        // ── STAGE 4: Manual Approval Gate ────────────────────
-        // Only runs when ACTION is apply/destroy AND AUTO_APPROVE is false
-        // This prevents accidental infrastructure destruction!
+        // 4. Manual Approval Gate ─────────────────────────────
+        // Skipped if ACTION=plan or AUTO_APPROVE=true
         stage('Approval Gate') {
             when {
                 allOf {
-                    expression { params.ACTION in ['apply', 'destroy'] }
+                    expression { params.ACTION != 'plan' }
                     expression { params.AUTO_APPROVE == false }
                 }
             }
             steps {
                 script {
-                    def actionEmoji = params.ACTION == 'destroy' ? '🔴 DESTROY' : '🟢 APPLY'
-                    // This pauses the pipeline and waits for a human to click Proceed or Abort
+                    def actionMsg = params.ACTION.toUpperCase()
                     input(
-                        message: "${actionEmoji} — Are you sure you want to run 'terraform ${params.ACTION}'? Review the plan above before proceeding.",
-                        ok: 'Yes, Proceed!'
+                        message: "⚠️  You are about to run terraform ${actionMsg}. Proceed?",
+                        ok: "Yes, ${actionMsg}!"
                     )
                 }
             }
         }
 
-        // ── STAGE 5: Terraform Apply ──────────────────────────
+        // 5. Terraform Apply ──────────────────────────────────
         stage('Terraform Apply') {
             when {
                 expression { params.ACTION == 'apply' }
             }
             steps {
-                dir("${TF_DIR}") {
-                    echo '🚀 Applying Terraform plan to AWS...'
-                    // Uses the saved plan file so exactly what was reviewed gets applied
+                dir(env.TF_DIR) {
+                    echo '🚀 Applying Terraform plan...'
                     sh 'terraform apply -input=false tfplan'
-                    echo '✅ Infrastructure successfully provisioned!'
+                    echo '✅ Terraform Apply complete. Infrastructure is up!'
                 }
             }
         }
 
-        // ── STAGE 6: Terraform Destroy ────────────────────────
+        // 6. Terraform Destroy ────────────────────────────────
         stage('Terraform Destroy') {
             when {
                 expression { params.ACTION == 'destroy' }
             }
             steps {
-                dir("${TF_DIR}") {
-                    echo '🔴 Destroying Terraform-managed infrastructure...'
-                    // -auto-approve is always passed here because the human already
-                    // approved via the Approval Gate stage above (or AUTO_APPROVE is true)
+                dir(env.TF_DIR) {
+                    echo '💣 Destroying Terraform-managed infrastructure...'
                     sh 'terraform destroy -input=false -auto-approve'
-                    echo '✅ Infrastructure successfully destroyed.'
+                    echo '✅ Terraform Destroy complete. Infrastructure removed.'
                 }
             }
         }
     }
 
-    // ── POST ACTIONS ──────────────────────────────────────────
+    // ── Post Actions ──────────────────────────────────────────
     post {
         always {
-            echo "📊 Pipeline finished. ACTION=${params.ACTION} | AUTO_APPROVE=${params.AUTO_APPROVE}"
+            echo "Pipeline finished. Action: ${params.ACTION} | Auto-Approve: ${params.AUTO_APPROVE}"
         }
         success {
-            echo "✅ infra-pipeline completed successfully for action: ${params.ACTION}"
+            echo '✅ infra-pipeline completed successfully!'
         }
         failure {
-            echo "❌ infra-pipeline FAILED for action: ${params.ACTION}. Review the console output above."
+            echo '❌ infra-pipeline failed. Check the logs above for errors.'
         }
     }
 }
