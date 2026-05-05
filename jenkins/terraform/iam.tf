@@ -54,10 +54,57 @@ resource "aws_iam_policy" "ecr_access_policy" {
   })
 }
 
-# Attach the Policy to the Role
+# IAM Policy that grants Terraform access to S3 state backend + DynamoDB locking
+# Required so the infra-pipeline can store and lock Terraform state remotely.
+# Without this, terraform init fails with a 403 Forbidden error.
+resource "aws_iam_policy" "terraform_state_policy" {
+  name        = "JenkinsAgentTerraformStatePolicy"
+  description = "Allows Jenkins Agent to read/write Terraform state in S3 and lock it via DynamoDB"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        # S3 permissions scoped to the specific state bucket only
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:DeleteObject",
+          "s3:ListBucket",
+          "s3:GetBucketVersioning",
+          "s3:GetEncryptionConfiguration"
+        ]
+        Resource = [
+          "arn:aws:s3:::skillswap-867490540447-us-east-1-3737",
+          "arn:aws:s3:::skillswap-867490540447-us-east-1-3737/*"
+        ]
+      },
+      {
+        # DynamoDB permissions for Terraform state locking
+        Effect = "Allow"
+        Action = [
+          "dynamodb:GetItem",
+          "dynamodb:PutItem",
+          "dynamodb:DeleteItem",
+          "dynamodb:DescribeTable"
+        ]
+        Resource = "arn:aws:dynamodb:us-east-1:867490540447:table/skillswap-tf-lock-3737"
+      }
+    ]
+  })
+}
+
+# Attach the ECR Policy to the Role
 resource "aws_iam_role_policy_attachment" "jenkins_agent_ecr_attach" {
   role       = aws_iam_role.jenkins_agent_role.name
   policy_arn = aws_iam_policy.ecr_access_policy.arn
+}
+
+# Attach the Terraform State Policy to the Role
+resource "aws_iam_role_policy_attachment" "jenkins_agent_terraform_state_attach" {
+  role       = aws_iam_role.jenkins_agent_role.name
+  policy_arn = aws_iam_policy.terraform_state_policy.arn
 }
 
 # Create an Instance Profile to wrap the Role so it can be attached to the EC2 Instance

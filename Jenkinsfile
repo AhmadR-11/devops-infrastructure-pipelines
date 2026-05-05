@@ -166,15 +166,112 @@ pipeline {
             }
         }
 
-        stage('Deploy') {
+        stage('Deploy-Production (Blue-Green)') {
+            when {
+                branch 'main'
+            }
             steps {
-                echo '🚀 Deploying application to the agent server...'
-                // This cleans up any old versions before deploying the new one
-                sh 'docker stop sample-app || true'
-                sh 'docker rm sample-app || true'
-                // This officially runs the app using our newly generated Short SHA tag!
-                sh 'docker run -d -p 3000:3000 --name sample-app sample-express-app:$SHORT_SHA'
-                echo '✅ Application successfully deployed and running on port 3000.'
+                script {
+                    echo '🚀 Starting Blue-Green Deployment to AWS...'
+                    
+                    // 1. Query the ALB Listener to determine the currently LIVE color
+                    env.ALB_ARN = sh(script: "aws elbv2 describe-load-balancers --names skillswap-web-alb --query 'LoadBalancers[0].LoadBalancerArn' --output text", returnStdout: true).trim()
+                    env.LISTENER_ARN = sh(script: "aws elbv2 describe-listeners --load-balancer-arn ${env.ALB_ARN} --query 'Listeners[?Port==`80`].ListenerArn' --output text", returnStdout: true).trim()
+                    env.TEST_LISTENER_ARN = sh(script: "aws elbv2 describe-listeners --load-balancer-arn ${env.ALB_ARN} --query 'Listeners[?Port==`8080`].ListenerArn' --output text", returnStdout: true).trim()
+                    
+                    env.LIVE_TG_ARN = sh(script: "aws elbv2 describe-listeners --listener-arns ${env.LISTENER_ARN} --query 'Listeners[0].DefaultActions[0].TargetGroupArn' --output text", returnStdout: true).trim()
+                    
+                    if (env.LIVE_TG_ARN.contains('tg-blue')) {
+                        env.LIVE_COLOR = 'blue'
+                        env.IDLE_COLOR = 'green'
+                    } else {
+                        env.LIVE_COLOR = 'green'
+                        env.IDLE_COLOR = 'blue'
+                    }
+                    
+                    echo "🟢 Live Environment: ${env.LIVE_COLOR}"
+                    echo "🟡 Idle Environment: ${env.IDLE_COLOR} (Will be updated)"
+                    
+                    env.IDLE_ASG = "skillswap-asg-${env.IDLE_COLOR}"
+                    env.IDLE_TG_ARN = sh(script: "aws elbv2 describe-target-groups --names skillswap-tg-${env.IDLE_COLOR} --query 'TargetGroups[0].TargetGroupArn' --output text", returnStdout: true).trim()
+                }
+                
+                // 2. Update the idle ASG Launch Template with the new ECR image
+                sh '''
+                    echo "📝 Updating Launch Template for ${IDLE_ASG}..."
+                    LT_ID=$(aws ec2 describe-launch-templates --filters "Name=tag:Name,Values=Web-Server-Launch-Template" --query 'LaunchTemplates[0].LaunchTemplateId' --output text)
+                    
+                    # Create the new User Data script that pulls our new Docker image
+                    USER_DATA=$(cat <<EOF
+#!/bin/bash
+set -euxo pipefail
+yum update -y || apt-get update -y
+yum install -y docker aws-cli || apt-get install -y docker.io awscli
+systemctl start docker || true
+systemctl enable docker || true
+
+# Login to ECR and pull the newly built image
+aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 867490540447.dkr.ecr.us-east-1.amazonaws.com
+# Run the application container on port 80 (mapping to Node.js port 3000)
+docker run -d -p 80:3000 867490540447.dkr.ecr.us-east-1.amazonaws.com/sample-express-app:${SHORT_SHA}
+EOF
+)
+                    B64_USER_DATA=$(echo "$USER_DATA" | base64 -w 0)
+                    
+                    # Create the new template version
+                    NEW_VERSION=$(aws ec2 create-launch-template-version \
+                      --launch-template-id $LT_ID \
+                      --source-version '$Latest' \
+                      --launch-template-data '{"UserData":"'"$B64_USER_DATA"'"}' \
+                      --query 'LaunchTemplateVersion.VersionNumber' --output text)
+                      
+                    echo "✅ Created Launch Template Version: $NEW_VERSION"
+                    
+                    # Trigger an Instance Refresh to cycle out old EC2 instances
+                    echo "🔄 Starting Instance Refresh on ${IDLE_ASG}..."
+                    aws autoscaling start-instance-refresh \
+                      --auto-scaling-group-name $IDLE_ASG \
+                      --preferences '{"MinHealthyPercentage": 0}' \
+                      --desired-configuration '{"LaunchTemplate": {"LaunchTemplateId": "'$LT_ID'", "Version": "'$NEW_VERSION'"}}'
+                      
+                    # Wait for Instance Refresh to complete
+                    while true; do
+                      STATUS=$(aws autoscaling describe-instance-refreshes --auto-scaling-group-name $IDLE_ASG --query 'InstanceRefreshes[0].Status' --output text)
+                      if [ "$STATUS" == "Successful" ]; then break; fi
+                      if [[ "$STATUS" == *"Failed"* ]] || [[ "$STATUS" == *"Cancelled"* ]]; then echo "❌ Refresh failed: $STATUS"; exit 1; fi
+                      echo "⏳ Waiting for instance refresh... Status: $STATUS"
+                      sleep 15
+                    done
+                    echo "✅ Instance Refresh Complete!"
+                '''
+                
+                // 3. Wait for all targets to be healthy
+                sh '''
+                    echo "🏥 Waiting for targets in ${IDLE_TG_ARN} to become Healthy..."
+                    aws elbv2 wait target-in-service --target-group-arn $IDLE_TG_ARN
+                    echo "✅ All targets are healthy!"
+                '''
+                
+                // 4. Run Smoke Test
+                sh '''
+                    echo "💨 Running Smoke Test on Idle Environment via Port 8080..."
+                    ALB_DNS=$(aws elbv2 describe-load-balancers --names skillswap-web-alb --query 'LoadBalancers[0].DNSName' --output text)
+                    
+                    # Ensure Test Listener is pointing to IDLE_TG before testing
+                    aws elbv2 modify-listener --listener-arn $TEST_LISTENER_ARN \
+                      --default-actions Type=forward,TargetGroupArn=$IDLE_TG_ARN > /dev/null
+                      
+                    # Give it 10 seconds to propagate
+                    sleep 10
+                    
+                    # Curl the test port
+                    HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://$ALB_DNS:8080/)
+                    if [ "$HTTP_STATUS" -ne 200 ]; then
+                        echo "❌ Smoke test failed! Received HTTP status $HTTP_STATUS"
+                        exit 1
+                    fi
+                    echo "✅ Smoke test passed! (HTTP $HTTP_STATUS)"
+                '''
             }
         }
     }
