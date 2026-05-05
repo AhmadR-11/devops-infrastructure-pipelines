@@ -107,6 +107,39 @@ resource "aws_iam_role_policy_attachment" "jenkins_agent_terraform_state_attach"
   policy_arn = aws_iam_policy.terraform_state_policy.arn
 }
 
+# IAM Policy that grants access for Blue-Green Deployment AWS CLI operations
+resource "aws_iam_policy" "blue_green_deploy_policy" {
+  name        = "JenkinsAgentBlueGreenDeployPolicy"
+  description = "Allows Jenkins Agent to perform ALB, ASG, and EC2 updates for Blue-Green deployments"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "elasticloadbalancing:DescribeLoadBalancers",
+          "elasticloadbalancing:DescribeListeners",
+          "elasticloadbalancing:DescribeTargetGroups",
+          "elasticloadbalancing:ModifyListener",
+          "elasticloadbalancing:DescribeTargetHealth",
+          "ec2:DescribeLaunchTemplates",
+          "ec2:CreateLaunchTemplateVersion",
+          "autoscaling:StartInstanceRefresh",
+          "autoscaling:DescribeInstanceRefreshes"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+# Attach Blue-Green Deployment Policy
+resource "aws_iam_role_policy_attachment" "jenkins_agent_blue_green_attach" {
+  role       = aws_iam_role.jenkins_agent_role.name
+  policy_arn = aws_iam_policy.blue_green_deploy_policy.arn
+}
+
 # Create an Instance Profile to wrap the Role so it can be attached to the EC2 Instance
 resource "aws_iam_instance_profile" "jenkins_agent_profile" {
   name = "jenkins_agent_instance_profile"
