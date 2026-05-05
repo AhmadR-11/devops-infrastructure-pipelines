@@ -9,6 +9,7 @@ pipeline {
     environment {
         // Securely injects the Slack Webhook without exposing the plaintext URL
         SLACK_WEBHOOK_URL = credentials('slack-webhook')
+        AWS_DEFAULT_REGION = 'us-east-1'
     }
 
     stages {
