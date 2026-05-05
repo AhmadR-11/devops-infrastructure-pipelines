@@ -4,13 +4,13 @@ resource "aws_security_group" "sonarqube_sg" {
   description = "Allow port 9000 for SonarQube UI and 22 for SSH"
   vpc_id      = data.aws_vpc.existing_vpc.id
 
-  # Port 9000 for SonarQube Web UI (Restricted to My IP)
+  # Port 9000 for SonarQube Web UI (Open to all - dynamic IP workaround)
   ingress {
-    description = "SonarQube Web UI from My IP"
+    description = "SonarQube Web UI - Public Access"
     from_port   = 9000
     to_port     = 9000
     protocol    = "tcp"
-    cidr_blocks = ["59.103.246.18/32"] # Your exact public WiFi IP!
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
   # Port 9000 for SonarQube Web UI (Restricted to Jenkins Agent & Controller)
@@ -46,7 +46,7 @@ resource "aws_security_group" "sonarqube_sg" {
 
 # EC2 Instance for SonarQube
 resource "aws_instance" "sonarqube" {
-  ami           = data.aws_ami.ubuntu.id
+  ami           = "ami-0ff290337e78c83bf" # Pinned to current running instance AMI to prevent replacement
   instance_type = "t3.small" # Reverted to t3.small due to AWS Academy limits
   subnet_id     = data.aws_subnet.public_subnet.id
   key_name      = "skillswap-new-key" # Uses the same SSH key as Jenkins

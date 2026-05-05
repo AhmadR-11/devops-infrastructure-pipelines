@@ -9,45 +9,64 @@
 # - Outputs for easy demo/deliverables
 #############################################################
 
-resource "aws_autoscaling_group" "web_asg" {
-  name = "skillswap-web-asg"
+resource "aws_autoscaling_group" "asg_blue" {
+  name = "skillswap-asg-blue"
 
-  # Requirement: span both public subnets.
   vpc_zone_identifier = [
     aws_subnet.public_subnet_1.id,
     aws_subnet.public_subnet_2.id
   ]
 
-  # Requirement: capacity boundaries and default desired state.
   min_size         = 1
   max_size         = 3
-  # Requirement:
-  # • Scale the ASG desired_capacity to 2 manually using terraform apply.
   desired_capacity = 2
 
-  # Launch instances from the Task 4 launch template.
   launch_template {
     id      = aws_launch_template.web_server_lt.id
-    version = "$Latest" # Always use most recent LT version.
+    version = "$Latest"
   }
 
-  # Requirement: Name tag must propagate to EC2 instances.
   tag {
     key                 = "Name"
-    value               = "ASG-Web-Server"
+    value               = "ASG-Blue"
     propagate_at_launch = true
   }
 }
 
+resource "aws_autoscaling_group" "asg_green" {
+  name = "skillswap-asg-green"
+
+  vpc_zone_identifier = [
+    aws_subnet.public_subnet_1.id,
+    aws_subnet.public_subnet_2.id
+  ]
+
+  min_size         = 1
+  max_size         = 3
+  desired_capacity = 2
+
+  launch_template {
+    id      = aws_launch_template.web_server_lt.id
+    version = "$Latest"
+  }
+
+  tag {
+    key                 = "Name"
+    value               = "ASG-Green"
+    propagate_at_launch = true
+  }
+}
+
+# Note: Alarms are attached to the Blue ASG for this assignment setup.
+# In a real environment, you would duplicate these for the Green ASG.
 resource "aws_autoscaling_policy" "web_scale_out" {
   name                   = "skillswap-scale-out"
-  autoscaling_group_name = aws_autoscaling_group.web_asg.name
+  autoscaling_group_name = aws_autoscaling_group.asg_blue.name
   policy_type            = "SimpleScaling"
 
-  # Requirement: ChangeInCapacity + increment by 1.
   adjustment_type    = "ChangeInCapacity"
   scaling_adjustment = 1
-  cooldown           = 120 # Requirement: avoid rapid oscillation.
+  cooldown           = 120
 }
 
 resource "aws_cloudwatch_metric_alarm" "cpu_high_scale_out" {
@@ -62,19 +81,17 @@ resource "aws_cloudwatch_metric_alarm" "cpu_high_scale_out" {
   threshold           = 60
 
   dimensions = {
-    AutoScalingGroupName = aws_autoscaling_group.web_asg.name
+    AutoScalingGroupName = aws_autoscaling_group.asg_blue.name
   }
 
-  # Trigger scale-out policy when alarm enters ALARM state.
   alarm_actions = [aws_autoscaling_policy.web_scale_out.arn]
 }
 
 resource "aws_autoscaling_policy" "web_scale_in" {
   name                   = "skillswap-scale-in"
-  autoscaling_group_name = aws_autoscaling_group.web_asg.name
+  autoscaling_group_name = aws_autoscaling_group.asg_blue.name
   policy_type            = "SimpleScaling"
 
-  # Requirement: decrement by 1 with 120s cooldown.
   adjustment_type    = "ChangeInCapacity"
   scaling_adjustment = -1
   cooldown           = 120
@@ -92,10 +109,9 @@ resource "aws_cloudwatch_metric_alarm" "cpu_low_scale_in" {
   threshold           = 20
 
   dimensions = {
-    AutoScalingGroupName = aws_autoscaling_group.web_asg.name
+    AutoScalingGroupName = aws_autoscaling_group.asg_blue.name
   }
 
-  # Trigger scale-in policy when alarm enters ALARM state.
   alarm_actions = [aws_autoscaling_policy.web_scale_in.arn]
 }
 
@@ -103,42 +119,12 @@ resource "aws_cloudwatch_metric_alarm" "cpu_low_scale_in" {
 # Outputs for Task 4 Deliverables
 #############################################################
 
-output "asg_name" {
-  description = "Auto Scaling Group name for activity history verification."
-  value       = aws_autoscaling_group.web_asg.name
+output "asg_blue_name" {
+  description = "Auto Scaling Group Blue name"
+  value       = aws_autoscaling_group.asg_blue.name
 }
 
-output "asg_arn" {
-  description = "Auto Scaling Group ARN."
-  value       = aws_autoscaling_group.web_asg.arn
-}
-
-output "scale_out_policy_arn" {
-  description = "Scale-out policy ARN triggered by high CPU alarm."
-  value       = aws_autoscaling_policy.web_scale_out.arn
-}
-
-output "scale_in_policy_arn" {
-  description = "Scale-in policy ARN triggered by low CPU alarm."
-  value       = aws_autoscaling_policy.web_scale_in.arn
-}
-
-output "cpu_high_alarm_name" {
-  description = "CloudWatch alarm name for scale-out trigger."
-  value       = aws_cloudwatch_metric_alarm.cpu_high_scale_out.alarm_name
-}
-
-output "cpu_low_alarm_name" {
-  description = "CloudWatch alarm name for scale-in trigger."
-  value       = aws_cloudwatch_metric_alarm.cpu_low_scale_in.alarm_name
-}
-
-output "asg_console_path" {
-  description = "AWS Console path to verify ASG activity history."
-  value       = "EC2 Console -> Auto Scaling Groups -> ${aws_autoscaling_group.web_asg.name} -> Activity"
-}
-
-output "cloudwatch_alarms_console_path" {
-  description = "AWS Console path to verify both CPU alarms."
-  value       = "CloudWatch Console -> Alarms -> All alarms -> skillswap-cpu-high-scale-out / skillswap-cpu-low-scale-in"
+output "asg_green_name" {
+  description = "Auto Scaling Group Green name"
+  value       = aws_autoscaling_group.asg_green.name
 }
