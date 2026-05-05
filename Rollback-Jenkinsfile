@@ -1,0 +1,55 @@
+pipeline {
+    agent { label 'linux-agent' }
+
+    stages {
+        stage('Manual Rollback') {
+            steps {
+                script {
+                    echo '🔄 Initiating Emergency Manual Rollback...'
+                    
+                    // 1. Query the ALB Listener to determine the currently LIVE color
+                    env.ALB_ARN = sh(script: "aws elbv2 describe-load-balancers --names skillswap-web-alb --query 'LoadBalancers[0].LoadBalancerArn' --output text", returnStdout: true).trim()
+                    env.LISTENER_ARN = sh(script: "aws elbv2 describe-listeners --load-balancer-arn ${env.ALB_ARN} --query 'Listeners[?Port==`80`].ListenerArn' --output text", returnStdout: true).trim()
+                    
+                    env.LIVE_TG_ARN = sh(script: "aws elbv2 describe-listeners --listener-arns ${env.LISTENER_ARN} --query 'Listeners[0].DefaultActions[0].TargetGroupArn' --output text", returnStdout: true).trim()
+                    
+                    if (env.LIVE_TG_ARN.contains('tg-blue')) {
+                        env.LIVE_COLOR = 'blue'
+                        env.ROLLBACK_COLOR = 'green'
+                    } else {
+                        env.LIVE_COLOR = 'green'
+                        env.ROLLBACK_COLOR = 'blue'
+                    }
+                    
+                    echo "🚨 Emergency! Current Live Environment is ${env.LIVE_COLOR}"
+                    echo "🔙 Rolling back to previous stable environment: ${env.ROLLBACK_COLOR}"
+                    
+                    env.ROLLBACK_TG_ARN = sh(script: "aws elbv2 describe-target-groups --names skillswap-tg-${env.ROLLBACK_COLOR} --query 'TargetGroups[0].TargetGroupArn' --output text", returnStdout: true).trim()
+                    env.TIMESTAMP = sh(script: "date -u +'%Y-%m-%dT%H:%M:%SZ'", returnStdout: true).trim()
+                }
+                
+                // 2. Perform the Rollback
+                sh '''
+                    echo "🔀 Pointing Main Listener (Port 80) to ${ROLLBACK_COLOR}..."
+                    aws elbv2 modify-listener --listener-arn $LISTENER_ARN \
+                      --default-actions Type=forward,TargetGroupArn=$ROLLBACK_TG_ARN > /dev/null
+                      
+                    echo "✅ Traffic successfully switched. System rolled back to ${ROLLBACK_COLOR}!"
+                '''
+                
+                // 3. Log Rollback to S3
+                sh '''
+                    echo "📝 Writing Rollback log to S3..."
+                    BUCKET="s3://skillswap-867490540447-us-east-1-3737/deployment-logs/deployments.jsonl"
+                    LOG_FILE="deployments.jsonl"
+                    
+                    aws s3 cp $BUCKET $LOG_FILE || touch $LOG_FILE
+                    
+                    JSON_LOG=$(printf '{"timestamp": "%s", "git_sha": "rollback", "image_tag": "rollback", "previous_color": "%s", "new_color": "%s", "result": "rolled-back"}' "$TIMESTAMP" "$LIVE_COLOR" "$ROLLBACK_COLOR")
+                    echo "$JSON_LOG" >> $LOG_FILE
+                    aws s3 cp $LOG_FILE $BUCKET
+                '''
+            }
+        }
+    }
+}

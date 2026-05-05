@@ -267,11 +267,62 @@ EOF
                     # Curl the test port
                     HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://$ALB_DNS:8080/)
                     if [ "$HTTP_STATUS" -ne 200 ]; then
-                        echo "❌ Smoke test failed! Received HTTP status $HTTP_STATUS"
+                        echo "❌ Smoke test failed! Received HTTP status $HTTP_STATUS. Build will fail and listener will NOT be switched."
                         exit 1
                     fi
                     echo "✅ Smoke test passed! (HTTP $HTTP_STATUS)"
                 '''
+                
+                // 5. Swap Traffic (Requirement 1 & 2)
+                script {
+                    env.TIMESTAMP = sh(script: "date -u +'%Y-%m-%dT%H:%M:%SZ'", returnStdout: true).trim()
+                }
+                sh '''
+                    echo "🔀 Smoke test passed. Switching production traffic to ${IDLE_COLOR}..."
+                    
+                    # Point Main Listener (Port 80) to the new Live environment (previously Idle)
+                    aws elbv2 modify-listener --listener-arn $LISTENER_ARN \
+                      --default-actions Type=forward,TargetGroupArn=$IDLE_TG_ARN > /dev/null
+                      
+                    echo "✅ Traffic successfully switched. Production is now running on ${IDLE_COLOR}!"
+                '''
+                
+                // 6. Log Deployment to S3 (Requirement 4)
+                sh '''
+                    echo "📝 Writing deployment log to S3..."
+                    BUCKET="s3://skillswap-867490540447-us-east-1-3737/deployment-logs/deployments.jsonl"
+                    LOG_FILE="deployments.jsonl"
+                    
+                    # Try to download the existing log file (it may not exist on the first run)
+                    aws s3 cp $BUCKET $LOG_FILE || touch $LOG_FILE
+                    
+                    # Create the JSON log entry
+                    JSON_LOG=$(printf '{"timestamp": "%s", "git_sha": "%s", "image_tag": "%s", "previous_color": "%s", "new_color": "%s", "result": "success"}' "$TIMESTAMP" "$SHORT_SHA" "$CLEAN_BRANCH" "$LIVE_COLOR" "$IDLE_COLOR")
+                    
+                    # Append the new entry
+                    echo "$JSON_LOG" >> $LOG_FILE
+                    
+                    # Upload it back to S3
+                    aws s3 cp $LOG_FILE $BUCKET
+                    echo "✅ Deployment logged successfully!"
+                '''
+            }
+            post {
+                failure {
+                    script {
+                        env.TIMESTAMP = sh(script: "date -u +'%Y-%m-%dT%H:%M:%SZ'", returnStdout: true).trim()
+                    }
+                    sh '''
+                        echo "📝 Writing FAILED deployment log to S3..."
+                        BUCKET="s3://skillswap-867490540447-us-east-1-3737/deployment-logs/deployments.jsonl"
+                        LOG_FILE="deployments.jsonl"
+                        aws s3 cp $BUCKET $LOG_FILE || touch $LOG_FILE
+                        
+                        JSON_LOG=$(printf '{"timestamp": "%s", "git_sha": "%s", "image_tag": "%s", "previous_color": "%s", "new_color": "%s", "result": "failed"}' "$TIMESTAMP" "$SHORT_SHA" "$CLEAN_BRANCH" "$LIVE_COLOR" "$IDLE_COLOR")
+                        echo "$JSON_LOG" >> $LOG_FILE
+                        aws s3 cp $LOG_FILE $BUCKET
+                    '''
+                }
             }
         }
     }
