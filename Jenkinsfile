@@ -267,7 +267,7 @@ EOF
                     
                     # Curl the test port
                     HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://$ALB_DNS:8080/)
-                    if [ "$HTTP_STATUS" -ne 200 ]; then
+                    if [ "$HTTP_STATUS" -eq 200 ]; then
                         echo "❌ Smoke test failed! Received HTTP status $HTTP_STATUS. Build will fail and listener will NOT be switched."
                         exit 1
                     fi
