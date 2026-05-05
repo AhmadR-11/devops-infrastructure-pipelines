@@ -32,14 +32,14 @@ resource "aws_key_pair" "key" {
 
 # 3. Calling Compute Module
 module "compute" {
-  source             = "./modules/compute"
-  environment        = "skillswap-task6"
-  
+  source      = "./modules/compute"
+  environment = "skillswap-task6"
+
   # Requirement:
   # • Update your Terraform compute module to use the custom Packer-built AMI ID
   # ONCE PACKER IS BUILT, PASTE THE AMI HERE!
-  ami_id             = "ami-PLACEHOLDER_REPLACE_ME_AFTER_PACKER_BUILD"
-  
+  ami_id = "ami-PLACEHOLDER_REPLACE_ME_AFTER_PACKER_BUILD"
+
   instance_type      = "t3.micro"
   subnet_id          = module.vpc.public_subnet_ids[0]
   security_group_ids = [module.security.web_sg_id]
