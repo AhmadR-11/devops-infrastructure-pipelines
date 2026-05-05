@@ -45,7 +45,7 @@ locals {
 # Create the S3 bucket using the unique local value.
 resource "aws_s3_bucket" "assignment_bucket" {
   bucket = local.unique_bucket_name # final unique bucket name
-  
+
   force_destroy = true
 
   tags = {
